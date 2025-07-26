@@ -1,7 +1,11 @@
 package me.yeoc.educlient.object;
 
+import lombok.AllArgsConstructor;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
+@AllArgsConstructor
+@NoArgsConstructor
 @Data
 public class CourseTab {
     private String name;      // 课程分类名称（如 主修课程）
