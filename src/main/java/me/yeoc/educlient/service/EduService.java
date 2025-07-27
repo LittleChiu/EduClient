@@ -54,7 +54,7 @@ public class EduService {
      *  Session‑scoped fields
      * ---------------------------------------------------------- */
 
-    @Setter
+    @Setter @Getter
     private String cookie;
 
     /** Cached after the first successful call to {@link #fetchCourseTabs()}. */
@@ -83,6 +83,7 @@ public class EduService {
      * @return list of {@link CourseTab} never {@code null} (may be empty).
      * @throws IOException when the remote service cannot be reached or returns a non‑200 status.
      */
+
     public List<CourseTab> fetchCourseTabs() throws IOException {
         final String url = BASE_URL + "/jwglxt/xsxk/zzxkyzb_cxZzxkYzbIndex.html?gnmkdm=N253512&layout=default";
 
