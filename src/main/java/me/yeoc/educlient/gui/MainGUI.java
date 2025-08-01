@@ -30,7 +30,7 @@ public class MainGUI {
 
     public MainGUI(){
         tabbedPane.addTab("选课管理",new ChooseCourseGUI(this).getMainPanel());
-
+        tabbedPane.addTab("成绩查询",new GradeQueryUI(this).getMainPanel());
         tabbedPane.addTab("个人信息",new UserInfoPanel(this).getMainPanel());
     }
 
