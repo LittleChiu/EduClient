@@ -4,32 +4,49 @@ import lombok.Getter;
 import me.yeoc.educlient.service.GradeAnalyzeService;
 
 import javax.swing.*;
+import javax.swing.table.DefaultTableModel;
+import java.awt.*;
 
 public class GradeQueryUI {
-    private MainGUI mainGUI;
+    private final MainGUI mainGUI;
     private GradeAnalyzeService service;
 
     @Getter
     private JPanel mainPanel;
-    private JTable table1;
-    private JTextField textField1;
-    private JTextField textField2;
-    private JTextField textField3;
-    private JComboBox comboBox1;
-    private JComboBox comboBox2;
-    private JButton 查询Button;
-    private JButton 导出Button;
+    private JTable resultTable;
+    private JButton queryButton;
+    private JButton exportButton;
 
-    public GradeQueryUI(MainGUI mainGUI){
+    public GradeQueryUI(MainGUI mainGUI) {
         this.mainGUI = mainGUI;
-        init();
+        initUI();
     }
 
-    private void init(){
+    private void initUI() {
         service = new GradeAnalyzeService();
+        mainPanel = new JPanel(new BorderLayout());
 
+        // Top Panel
+        JPanel topPanel = new JPanel(new FlowLayout());
+        queryButton = new JButton("查询成绩 (Mock)");
+        exportButton = new JButton("导出 Excel (Mock)");
+        topPanel.add(queryButton);
+        topPanel.add(exportButton);
+        mainPanel.add(topPanel, BorderLayout.NORTH);
 
+        // Center Table
+        String[] columnNames = { "学年", "学期", "课程名称", "学分", "成绩", "绩点" };
+        resultTable = new JTable(new DefaultTableModel(columnNames, 0));
+        mainPanel.add(new JScrollPane(resultTable), BorderLayout.CENTER);
+
+        // Listeners (Placeholders)
+        queryButton.addActionListener(e -> {
+            JOptionPane.showMessageDialog(mainPanel, "功能开发中...");
+            mainGUI.info("点击了查询成绩");
+        });
+
+        exportButton.addActionListener(e -> {
+            JOptionPane.showMessageDialog(mainPanel, "功能开发中...");
+        });
     }
-
-
 }
