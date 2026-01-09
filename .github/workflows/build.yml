@@ -1,0 +1,105 @@
+name: Build EduClient
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:  # 允许手动触发
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+      fail-fast: false
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Build with Maven
+        run: mvn -B package --file pom.xml
+
+      - name: Upload JAR artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: EduClient-jar-${{ matrix.os }}
+          path: target/EduClient-*-shaded.jar
+          if-no-files-found: warn
+
+      - name: Upload native package (Windows)
+        if: matrix.os == 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: EduClient-windows
+          path: target/EduClient/
+          if-no-files-found: warn
+
+      - name: Upload native package (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: EduClient-linux
+          path: target/EduClient/
+          if-no-files-found: warn
+
+      - name: Upload native package (macOS)
+        if: matrix.os == 'macos-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: EduClient-macos
+          path: target/EduClient/
+          if-no-files-found: warn
+
+  # 创建 Release（仅在推送 tag 时触发）
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: EduClient-windows
+          path: EduClient-windows
+
+      - name: Download Linux artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: EduClient-linux
+          path: EduClient-linux
+
+      - name: Download macOS artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: EduClient-macos
+          path: EduClient-macos
+
+      - name: Create ZIP archives
+        run: |
+          zip -r EduClient-windows.zip EduClient-windows
+          zip -r EduClient-linux.zip EduClient-linux
+          zip -r EduClient-macos.zip EduClient-macos
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            EduClient-windows.zip
+            EduClient-linux.zip
+            EduClient-macos.zip
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
