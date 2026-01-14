@@ -116,7 +116,7 @@ public class BatchSnatchPanel {
                     processSingleId(service, tabs, id);
 
                     // Small delay to be nice
-                    Thread.sleep(500);
+//                    Thread.sleep(500);
                 }
                 log("=== 批量任务结束 ===");
             } catch (Exception e) {
