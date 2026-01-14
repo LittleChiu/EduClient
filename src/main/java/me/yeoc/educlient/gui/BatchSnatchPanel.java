@@ -18,6 +18,7 @@ public class BatchSnatchPanel {
     private JTextArea logArea;
     private JButton startButton;
     private JButton stopButton;
+    private JCheckBox loopCheckBox;
     private final AtomicBoolean running = new AtomicBoolean(false);
 
     public BatchSnatchPanel(MainGUI mainGUI) {
@@ -53,8 +54,10 @@ public class BatchSnatchPanel {
         startButton = new JButton("开始批量抢课");
         stopButton = new JButton("停止");
         stopButton.setEnabled(false);
+        loopCheckBox = new JCheckBox("循环模式");
         topPanel.add(startButton);
         topPanel.add(stopButton);
+        topPanel.add(loopCheckBox);
         mainPanel.add(topPanel, BorderLayout.NORTH);
 
         // Listeners
@@ -116,17 +119,24 @@ public class BatchSnatchPanel {
                     processSingleId(service, tabs, id);
 
                     // Small delay to be nice
-//                    Thread.sleep(500);
+                    // Thread.sleep(500);
                 }
                 log("=== 批量任务结束 ===");
             } catch (Exception e) {
                 log("任务异常终止: " + e.getMessage());
                 e.printStackTrace();
             } finally {
+                // If running is still true, it means we finished naturally (not stopped by
+                // user)
+                boolean shouldLoop = running.get() && loopCheckBox.isSelected();
                 running.set(false);
                 SwingUtilities.invokeLater(() -> {
                     startButton.setEnabled(true);
                     stopButton.setEnabled(false);
+                    if (shouldLoop) {
+                        log(">>> 循环模式开启，自动重新开始本次任务...");
+                        startButton.doClick();
+                    }
                 });
             }
         }).start();
@@ -237,7 +247,7 @@ public class BatchSnatchPanel {
 
             if (success) {
                 log("      ★ 选课成功！ ★");
-//                JOptionPane.showMessageDialog(mainPanel, "抢课成功: " + detail.getJxbmc());
+                // JOptionPane.showMessageDialog(mainPanel, "抢课成功: " + detail.getJxbmc());
             } else {
                 log("      选课失败 (Flag!=1)");
             }

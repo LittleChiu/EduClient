@@ -7,6 +7,8 @@ import me.yeoc.educlient.service.EduService;
 
 import javax.swing.*;
 import java.awt.*;
+import java.io.InputStream;
+import java.util.Properties;
 
 public class MainGUI {
     @Getter
@@ -25,7 +27,19 @@ public class MainGUI {
             e.printStackTrace();
         }
 
-        JFrame frame = new JFrame("教务管理系统 学生客户端 ver.1.0 by LittleQiu233");
+        String title = "教务管理系统 学生客户端 (Dev Mode)";
+        try (InputStream is = MainGUI.class.getClassLoader().getResourceAsStream("git.properties")) {
+            if (is != null) {
+                Properties props = new Properties();
+                props.load(is);
+                String ver = props.getProperty("git.commit.id.abbrev", "unknown");
+                String time = props.getProperty("git.build.time", "unknown");
+                title = String.format("教务管理系统 学生客户端 (v%s built at %s)", ver, time);
+            }
+        } catch (Exception ignored) {
+        }
+
+        JFrame frame = new JFrame(title);
         frame.setContentPane(new MainGUI().mainPanel);
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         frame.setSize(1280, 800);

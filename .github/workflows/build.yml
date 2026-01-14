@@ -33,7 +33,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: EduClient-jar-${{ matrix.os }}
-          path: target/EduClient-*-shaded.jar
+          path: target/EduClient-*.jar
           if-no-files-found: warn
 
       - name: Upload native package (Windows)
@@ -91,9 +91,13 @@ jobs:
           zip -r EduClient-linux.zip EduClient-linux
           zip -r EduClient-macos.zip EduClient-macos
 
+      - name: Get Build Time
+        run: echo "BUILD_TIME=$(TZ='Asia/Shanghai' date +'%Y-%m-%d %H:%M:%S')" >> $GITHUB_ENV
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
+          name: ${{ github.ref_name }} (${{ env.BUILD_TIME }})
           files: |
             EduClient-windows.zip
             EduClient-linux.zip
