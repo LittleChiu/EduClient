@@ -1,109 +1,60 @@
-name: Build EduClient
+name: Build EduClient Go
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [main]
+    tags: ["v*"]
   pull_request:
-    branches: [ main, master ]
-  workflow_dispatch:  # 允许手动触发
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
-  build:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [windows-latest, ubuntu-latest, macos-latest]
-      fail-fast: false
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: go-client
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
         with:
-          java-version: '17'
-          distribution: 'temurin'
-          cache: maven
+          go-version-file: go-client/go.mod
+          cache-dependency-path: go-client/go.sum
 
-      - name: Build with Maven
-        run: mvn -B package --file pom.xml
-
-      - name: Upload JAR artifact
-        uses: actions/upload-artifact@v4
+      - name: Set up MinGW
+        uses: egor-tensin/setup-mingw@v2
         with:
-          name: EduClient-jar-${{ matrix.os }}
-          path: target/EduClient-*.jar
-          if-no-files-found: warn
+          platform: x64
 
-      - name: Upload native package (Windows)
-        if: matrix.os == 'windows-latest'
-        uses: actions/upload-artifact@v4
-        with:
-          name: EduClient-windows
-          path: target/EduClient/
-          if-no-files-found: warn
+      - name: Test
+        run: go test ./...
 
-      - name: Upload native package (Linux)
-        if: matrix.os == 'ubuntu-latest'
-        uses: actions/upload-artifact@v4
-        with:
-          name: EduClient-linux
-          path: target/EduClient/
-          if-no-files-found: warn
+      - name: Vet
+        run: go vet ./...
 
-      - name: Upload native package (macOS)
-        if: matrix.os == 'macos-latest'
-        uses: actions/upload-artifact@v4
-        with:
-          name: EduClient-macos
-          path: target/EduClient/
-          if-no-files-found: warn
-
-  # 创建 Release（仅在推送 tag 时触发）
-  release:
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/')
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Download Windows artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: EduClient-windows
-          path: EduClient-windows
-
-      - name: Download Linux artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: EduClient-linux
-          path: EduClient-linux
-
-      - name: Download macOS artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: EduClient-macos
-          path: EduClient-macos
-
-      - name: Create ZIP archives
+      - name: Build Windows GUI
+        shell: pwsh
         run: |
-          zip -r EduClient-windows.zip EduClient-windows
-          zip -r EduClient-linux.zip EduClient-linux
-          zip -r EduClient-macos.zip EduClient-macos
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          go build -trimpath -ldflags "-s -w -H=windowsgui" -o "dist/EduClient-Go-同课优先级版.exe" ./cmd/educlient
 
-      - name: Get Build Time
-        run: echo "BUILD_TIME=$(TZ='Asia/Shanghai' date +'%Y-%m-%d %H:%M:%S')" >> $GITHUB_ENV
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: EduClient-Go-Windows
+          path: go-client/dist/EduClient-Go-同课优先级版.exe
+          if-no-files-found: error
 
-      - name: Create Release
+      - name: Publish tagged release
+        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          name: ${{ github.ref_name }} (${{ env.BUILD_TIME }})
-          files: |
-            EduClient-windows.zip
-            EduClient-linux.zip
-            EduClient-macos.zip
-          draft: false
-          prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          files: go-client/dist/EduClient-Go-同课优先级版.exe
 
