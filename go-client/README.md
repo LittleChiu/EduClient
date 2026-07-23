@@ -19,8 +19,8 @@
 
 ```powershell
 cd D:\Project\EduClient\go-client
-go build -trimpath -ldflags "-s -w -H=windowsgui" -o dist\EduClient-Go-同课优先级版.exe .\cmd\educlient
-.\dist\EduClient-Go-同课优先级版.exe
+go build -trimpath -ldflags "-s -w -H=windowsgui" -o dist\EduClient-Go.exe .\cmd\educlient
+.\dist\EduClient-Go.exe
 ```
 
 也可以从项目根目录运行 `start-go.cmd`。
