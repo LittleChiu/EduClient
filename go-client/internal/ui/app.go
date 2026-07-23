@@ -176,7 +176,7 @@ func (d *DesktopApp) sessionPage() fyne.CanvasObject {
 			})
 		}()
 	})
-	copyHint := widget.NewRichTextFromMarkdown("**内置登录流程**：选择 `教务系统直连` 或 `学校 WebVPN` 后点击“内置登录”。程序只在进入 `index_initMenu` 教务首页后判定成功，并以该页面的实际域名作为后续成绩查询、选课查询和批量抢课的 Base URL。")
+	copyHint := widget.NewRichTextFromMarkdown("**内置登录流程**：选择 `教务系统直连` 或 `学校 WebVPN` 后点击“内置登录”。WebVPN 中原本会弹出新窗口的教务链接会留在当前内置窗口；程序只在进入 `index_initMenu` 首页后判定成功，并以实际域名作为后续请求的 Base URL。")
 	copyHint.Wrapping = fyne.TextWrapWord
 	return container.NewPadded(container.NewVBox(
 		widget.NewLabelWithStyle("登录与会话", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),

@@ -139,8 +139,37 @@ func Open(ctx context.Context, endpoint Endpoint) (Session, error) {
 			return
 		}
 		successCondition := `(location.hostname === '` + directHost + `' || location.hostname === '` + webVPNHost + `') && location.pathname.startsWith('` + successPathPrefix + `')`
-		trigger := `try { if (` + successCondition + `) { window.eduClientCaptureSession(location.href, document.cookie); } } catch (_) {}`
-		w.Init(`
+		popupGuard := `
+(() => {
+  try {
+    if (!window.open || !window.open.__eduClientInline) {
+      const inlineOpen = function(rawURL) {
+        if (rawURL) location.assign(new URL(String(rawURL), location.href).href);
+        return window;
+      };
+      inlineOpen.__eduClientInline = true;
+      window.open = inlineOpen;
+    }
+    if (!window.__eduClientPopupListeners) {
+      window.__eduClientPopupListeners = true;
+      document.addEventListener('click', event => {
+        const target = event.target;
+        const anchor = target && target.closest ? target.closest('a[target="_blank"]') : null;
+        if (!anchor || !anchor.href) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        location.assign(anchor.href);
+      }, true);
+      document.addEventListener('submit', event => {
+        const form = event.target;
+        if (form && String(form.target).toLowerCase() === '_blank') form.target = '_self';
+      }, true);
+    }
+  } catch (_) {}
+})();`
+		trigger := popupGuard + `
+try { if (` + successCondition + `) { window.eduClientCaptureSession(location.href, document.cookie); } } catch (_) {}`
+		w.Init(popupGuard + `
 (() => {
   let sent = false;
   const watch = () => {
