@@ -16,4 +16,8 @@ func TestSetSessionSwitchesOriginAndCookieTogether(t *testing.T) {
 	if client.Cookie() != "JSESSIONID=test" {
 		t.Fatalf("cookie = %q", client.Cookie())
 	}
+	baseURL, cookie := client.session()
+	if baseURL != webVPN || cookie != "JSESSIONID=test" {
+		t.Fatalf("session snapshot = (%q, %q)", baseURL, cookie)
+	}
 }

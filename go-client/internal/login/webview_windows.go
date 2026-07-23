@@ -7,6 +7,7 @@ package login
 import (
 	"context"
 	"errors"
+	"net/url"
 	"runtime"
 	"strings"
 	"sync"
@@ -15,7 +16,11 @@ import (
 	webview "github.com/GopeedLab/webview_go"
 )
 
-const successURL = "/jwglxt/xtgl/"
+const (
+	directHost        = "jwglxt.zstu.edu.cn"
+	webVPNHost        = "jwglxt-443.webvpn.zstu.edu.cn"
+	successPathPrefix = "/jwglxt/xtgl/index_initMenu"
+)
 
 // Endpoint describes one supported route into the teaching-affairs system.
 type Endpoint struct {
@@ -23,6 +28,12 @@ type Endpoint struct {
 	BaseURL   string
 	LoginURL  string
 	CookieURL string
+}
+
+// Session contains cookies and the origin on which those cookies were issued.
+type Session struct {
+	BaseURL string
+	Cookie  string
 }
 
 var (
@@ -35,16 +46,31 @@ var (
 	WebVPNEndpoint = Endpoint{
 		Name:      "学校 WebVPN",
 		BaseURL:   "https://jwglxt-443.webvpn.zstu.edu.cn",
-		LoginURL:  "https://jwglxt-443.webvpn.zstu.edu.cn/jwglxt/xtgl/index_initMenu.html?jsdm=xs",
+		LoginURL:  "https://webvpn.zstu.edu.cn/",
 		CookieURL: "https://jwglxt-443.webvpn.zstu.edu.cn/jwglxt/xtgl/index_initMenu.html?jsdm=xs",
 	}
 )
 
+func endpointForSuccessURL(rawURL string) (Endpoint, bool) {
+	parsed, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil || !strings.HasPrefix(parsed.Path, successPathPrefix) {
+		return Endpoint{}, false
+	}
+	switch strings.ToLower(parsed.Hostname()) {
+	case directHost:
+		return DirectEndpoint, true
+	case webVPNHost:
+		return WebVPNEndpoint, true
+	default:
+		return Endpoint{}, false
+	}
+}
+
 // Open displays the embedded login window. It closes itself immediately after
 // the teaching-affairs landing page is reached and returns every jwglxt cookie,
 // including HTTP-only session cookies supplied by WebView2.
-func Open(ctx context.Context, endpoint Endpoint) (string, error) {
-	result := make(chan string, 1)
+func Open(ctx context.Context, endpoint Endpoint) (Session, error) {
+	result := make(chan Session, 1)
 	finished := make(chan struct{})
 	var closeOnce sync.Once
 
@@ -79,14 +105,14 @@ func Open(ctx context.Context, endpoint Endpoint) (string, error) {
 			}
 			return parts
 		}
-		publish := func(parts []string) {
+		publish := func(actual Endpoint, parts []string) {
 			closeOnce.Do(func() {
-				result <- strings.Join(parts, "; ")
+				result <- Session{BaseURL: actual.BaseURL, Cookie: strings.Join(parts, "; ")}
 				w.Terminate()
 			})
 		}
-		finish := func(_ string, browserCookie string) error {
-			cookies, err := w.GetCookies(endpoint.CookieURL)
+		capture := func(actual Endpoint, browserCookie string) {
+			cookies, _ := w.GetCookies(actual.CookieURL)
 			parts := cookieParts(cookies)
 			// The native cookie manager supplies HTTP-only cookies. document.cookie
 			// provides a fallback for runtimes which expose only non-HTTP-only values.
@@ -94,44 +120,33 @@ func Open(ctx context.Context, endpoint Endpoint) (string, error) {
 				parts = append(parts, strings.TrimSpace(browserCookie))
 			}
 			if len(parts) == 0 {
-				if err != nil {
-					return err
-				}
-				return errors.New("未读取到 jwglxt Cookie")
-			}
-			publish(parts)
-			return nil
-		}
-		// Poll the native cookie store as well as the page URL. This does not
-		// depend on page-side JavaScript and closes the login window as soon as
-		// the SSO redirect has created the teaching-affairs JSESSIONID cookie.
-		captureFromCookieStore := func() {
-			cookies, err := w.GetCookies(endpoint.CookieURL)
-			if err != nil {
 				return
 			}
-			hasSession := false
-			for _, cookie := range cookies {
-				if strings.EqualFold(cookie.Name, "JSESSIONID") {
-					hasSession = true
-				}
+			publish(actual, parts)
+		}
+		finish := func(pageURL string, browserCookie string) error {
+			actual, ok := endpointForSuccessURL(pageURL)
+			if !ok {
+				return errors.New("当前页面不是支持的教务系统首页")
 			}
-			if hasSession {
-				publish(cookieParts(cookies))
-			}
+			// Cookie APIs must run on the WebView UI thread. The URL received from
+			// JavaScript decides whether direct or WebVPN cookies are collected.
+			w.Dispatch(func() { capture(actual, browserCookie) })
+			return nil
 		}
 
 		if err := w.Bind("eduClientCaptureSession", finish); err != nil {
 			return
 		}
-		trigger := `try { if (location.href.includes('` + successURL + `')) { window.eduClientCaptureSession(location.href, document.cookie); } } catch (_) {}`
+		successCondition := `(location.hostname === '` + directHost + `' || location.hostname === '` + webVPNHost + `') && location.pathname.startsWith('` + successPathPrefix + `')`
+		trigger := `try { if (` + successCondition + `) { window.eduClientCaptureSession(location.href, document.cookie); } } catch (_) {}`
 		w.Init(`
 (() => {
   let sent = false;
   const watch = () => {
-    if (sent || !location.href.includes('` + successURL + `')) return;
-    sent = true;
-    window.eduClientCaptureSession(location.href, document.cookie);
+	if (sent || !(` + successCondition + `)) return;
+	sent = true;
+	window.eduClientCaptureSession(location.href, document.cookie);
   };
   setInterval(watch, 350);
   window.addEventListener('load', watch);
@@ -146,7 +161,7 @@ func Open(ctx context.Context, endpoint Endpoint) (string, error) {
 			case <-finished:
 				return
 			case <-ticker.C:
-				w.Dispatch(func() { captureFromCookieStore(); w.Eval(trigger) })
+				w.Dispatch(func() { w.Eval(trigger) })
 			}
 			for {
 				select {
@@ -156,7 +171,7 @@ func Open(ctx context.Context, endpoint Endpoint) (string, error) {
 				case <-finished:
 					return
 				case <-ticker.C:
-					w.Dispatch(func() { captureFromCookieStore(); w.Eval(trigger) })
+					w.Dispatch(func() { w.Eval(trigger) })
 				}
 			}
 		}()
@@ -171,9 +186,9 @@ func Open(ctx context.Context, endpoint Endpoint) (string, error) {
 		case cookie := <-result:
 			return cookie, nil
 		default:
-			return "", errors.New("登录窗口已关闭，未完成会话获取")
+			return Session{}, errors.New("登录窗口已关闭，未完成会话获取")
 		}
 	case <-ctx.Done():
-		return "", ctx.Err()
+		return Session{}, ctx.Err()
 	}
 }

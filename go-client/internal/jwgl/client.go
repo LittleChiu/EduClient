@@ -77,6 +77,12 @@ func (c *Client) Cookie() string  { c.mu.RLock(); defer c.mu.RUnlock(); return c
 func (c *Client) BaseURL() string { c.mu.RLock(); defer c.mu.RUnlock(); return c.baseURL }
 func (c *Client) LoggedIn() bool  { return c.Cookie() != "" }
 
+func (c *Client) session() (string, string) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.baseURL, c.cookie
+}
+
 func (c *Client) ValidateSession(ctx context.Context) error {
 	response, err := c.do(ctx, http.MethodGet, "/jwglxt/xtgl/index_initMenu.html?jsdm=xs", nil, 8*time.Second)
 	if err != nil {
@@ -421,7 +427,8 @@ func (c *Client) do(ctx context.Context, method, path string, form url.Values, t
 }
 
 func (c *Client) doWithHeaders(ctx context.Context, method, path string, form url.Values, timeout time.Duration, headers http.Header) (*http.Response, error) {
-	if c.Cookie() == "" {
+	requestBaseURL, requestCookie := c.session()
+	if requestCookie == "" {
 		return nil, errors.New("请先填写有效 Cookie")
 	}
 	if timeout <= 0 {
@@ -432,12 +439,12 @@ func (c *Client) doWithHeaders(ctx context.Context, method, path string, form ur
 	if form != nil {
 		body = strings.NewReader(form.Encode())
 	}
-	req, err := http.NewRequestWithContext(requestCtx, method, c.BaseURL()+path, body)
+	req, err := http.NewRequestWithContext(requestCtx, method, requestBaseURL+path, body)
 	if err != nil {
 		cancel()
 		return nil, err
 	}
-	req.Header.Set("Cookie", c.Cookie())
+	req.Header.Set("Cookie", requestCookie)
 	req.Header.Set("User-Agent", userAgent)
 	if form != nil {
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8")

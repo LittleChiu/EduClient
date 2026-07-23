@@ -137,9 +137,9 @@ func (d *DesktopApp) sessionPage() fyne.CanvasObject {
 		state.SetText("正在打开" + endpoint.Name + "登录窗口…")
 		d.setStatus("等待完成统一认证")
 		go func() {
-			value, err := login.Open(context.Background(), endpoint)
+			session, err := login.Open(context.Background(), endpoint)
 			if err == nil {
-				d.client.SetSession(endpoint.BaseURL, value)
+				d.client.SetSession(session.BaseURL, session.Cookie)
 				err = d.client.ValidateSession(context.Background())
 			}
 			fyne.Do(func() {
@@ -150,8 +150,8 @@ func (d *DesktopApp) sessionPage() fyne.CanvasObject {
 					d.setStatus("未登录")
 					return
 				}
-				cookie.SetText(value)
-				state.SetText("登录成功，已自动获取并校验 " + endpoint.BaseURL + " 会话 Cookie。")
+				cookie.SetText(session.Cookie)
+				state.SetText("登录成功，已自动获取并校验 " + session.BaseURL + " 会话 Cookie。")
 				d.setStatus("已登录")
 			})
 		}()
@@ -176,7 +176,7 @@ func (d *DesktopApp) sessionPage() fyne.CanvasObject {
 			})
 		}()
 	})
-	copyHint := widget.NewRichTextFromMarkdown("**内置登录流程**：选择 `教务系统直连` 或 `学校 WebVPN` 后点击“内置登录”。页面进入教务系统首页后，程序会从对应域名读取 Cookie，并让成绩查询、选课查询和批量抢课使用同一域名。")
+	copyHint := widget.NewRichTextFromMarkdown("**内置登录流程**：选择 `教务系统直连` 或 `学校 WebVPN` 后点击“内置登录”。程序只在进入 `index_initMenu` 教务首页后判定成功，并以该页面的实际域名作为后续成绩查询、选课查询和批量抢课的 Base URL。")
 	copyHint.Wrapping = fyne.TextWrapWord
 	return container.NewPadded(container.NewVBox(
 		widget.NewLabelWithStyle("登录与会话", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
