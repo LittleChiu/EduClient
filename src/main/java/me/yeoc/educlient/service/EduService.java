@@ -14,11 +14,13 @@ import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
 
 import java.io.IOException;
+import java.io.InterruptedIOException;
 import java.lang.reflect.Field;
 import java.time.Instant;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.concurrent.TimeUnit;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import me.yeoc.educlient.object.CourseItem;
@@ -388,6 +390,13 @@ public class EduService {
      * Enroll in a specific course (teaching class).
      */
     public boolean enrollCourse(CourseTab tab, CourseItem course) throws IOException {
+        return enrollCourse(tab, course, 0);
+    }
+
+    /**
+     * Enroll in a specific course (teaching class) with a per-request timeout.
+     */
+    public boolean enrollCourse(CourseTab tab, CourseItem course, int timeoutMs) throws IOException {
         CourseQueryContext ctx = lastContext;
         if (ctx == null) {
             throw new IllegalStateException("Context not initialized. Please search for courses first.");
@@ -429,7 +438,7 @@ public class EduService {
                 .header("X-Requested-With", "XMLHttpRequest")
                 .build();
 
-        try (Response response = httpClient.newCall(request).execute()) {
+        try (Response response = execute(request, timeoutMs)) {
             ensureSuccess(response);
             String json = Objects.requireNonNull(response.body()).string();
             System.out.println("DEBUG Enroll Response: " + json);
@@ -443,6 +452,14 @@ public class EduService {
      * @param jxbIds Comma-separated do_jxb_ids
      */
     public boolean enrollCourse(CourseTab tab, CourseItem headCourse, String jxbIds) throws IOException {
+        return enrollCourse(tab, headCourse, jxbIds, 0);
+    }
+
+    /**
+     * Enroll in a course or sub-courses using formatted jxb_ids with a per-request
+     * timeout.
+     */
+    public boolean enrollCourse(CourseTab tab, CourseItem headCourse, String jxbIds, int timeoutMs) throws IOException {
         CourseQueryContext ctx = lastContext;
         if (ctx == null) {
             throw new IllegalStateException("Context not initialized.");
@@ -483,7 +500,7 @@ public class EduService {
                 .header("X-Requested-With", "XMLHttpRequest")
                 .build();
 
-        try (Response response = httpClient.newCall(request).execute()) {
+        try (Response response = execute(request, timeoutMs)) {
             ensureSuccess(response);
             String json = Objects.requireNonNull(response.body()).string();
             // System.out.println("DEBUG Enroll Response: " + json);
@@ -659,31 +676,55 @@ public class EduService {
         }
     }
 
-    /**
-     * Example call to the grade‑query endpoint. Returns raw JSON (as text).
-     */
-    public String fetchCourseData() throws IOException {
-        RequestBody formBody = new FormBody.Builder()
-                .add("xnm", "2024")
-                .add("xqm", "12")
-                .add("_search", "false")
-                .add("nd", String.valueOf(Instant.now().toEpochMilli()))
-                .add("queryModel.showCount", "15")
-                .add("queryModel.currentPage", "1")
-                .add("queryModel.sortOrder", "asc")
-                .add("time", "1")
-                .build();
-
+    public boolean validateSession() throws IOException {
         Request request = new Request.Builder()
-                .url(BASE_URL + "/jwglxt/cjcx/cjjdcx_cxXsjdxmcjIndex.html?doType=query&gnmkdm=N305099")
-                .post(formBody)
+                .url(BASE_URL + "/jwglxt/xtgl/index_initMenu.html?jsdm=xs")
                 .header("Cookie", requireCookie())
-                .header("Content-Type", FORM.toString())
+                .header("User-Agent", USER_AGENT)
                 .build();
 
         try (Response response = httpClient.newCall(request).execute()) {
             ensureSuccess(response);
-            return Objects.requireNonNull(response.body()).string();
+            String finalUrl = response.request().url().toString();
+            String html = Objects.requireNonNull(response.body()).string();
+            return finalUrl.contains("/jwglxt/xtgl/index_initMenu.html")
+                    && !html.contains("/sso/jasiglogin");
+        }
+    }
+
+    /**
+     * Query student grades. An empty year or semester means all available values.
+     */
+    public String fetchCourseData(String academicYear, String semester, int pageSize) throws IOException {
+        RequestBody formBody = new FormBody.Builder()
+                .add("xnm", val(academicYear))
+                .add("xqm", val(semester))
+                .add("_search", "false")
+                .add("nd", String.valueOf(Instant.now().toEpochMilli()))
+                .add("queryModel.showCount", String.valueOf(Math.max(15, pageSize)))
+                .add("queryModel.currentPage", "1")
+                .add("queryModel.sortName", "xnm,xqm,kch")
+                .add("queryModel.sortOrder", "desc")
+                .add("time", "1")
+                .build();
+
+        Request request = new Request.Builder()
+                .url(BASE_URL + "/jwglxt/cjcx/cjcx_cxDgXscj.html?doType=query&gnmkdm=N305005")
+                .post(formBody)
+                .header("Cookie", requireCookie())
+                .header("Content-Type", FORM.toString())
+                .header("User-Agent", USER_AGENT)
+                .header("X-Requested-With", "XMLHttpRequest")
+                .header("Referer", BASE_URL + "/jwglxt/cjcx/cjcx_cxDgXscj.html?gnmkdm=N305005&layout=default")
+                .build();
+
+        try (Response response = httpClient.newCall(request).execute()) {
+            ensureSuccess(response);
+            String content = Objects.requireNonNull(response.body()).string();
+            if (content.trim().startsWith("<")) {
+                throw new IOException("登录状态已失效，请重新登录。");
+            }
+            return content;
         }
     }
 
@@ -809,6 +850,24 @@ public class EduService {
     private static void ensureSuccess(Response response) throws IOException {
         if (!response.isSuccessful()) {
             throw new IOException("HTTP " + response.code() + " - " + response.message());
+        }
+    }
+
+    private Response execute(Request request, int timeoutMs) throws IOException {
+        if (timeoutMs <= 0) {
+            return httpClient.newCall(request).execute();
+        }
+        int normalizedTimeoutMs = Math.max(200, timeoutMs);
+        OkHttpClient timeoutClient = httpClient.newBuilder()
+                .callTimeout(normalizedTimeoutMs, TimeUnit.MILLISECONDS)
+                .connectTimeout(normalizedTimeoutMs, TimeUnit.MILLISECONDS)
+                .readTimeout(normalizedTimeoutMs, TimeUnit.MILLISECONDS)
+                .writeTimeout(normalizedTimeoutMs, TimeUnit.MILLISECONDS)
+                .build();
+        try {
+            return timeoutClient.newCall(request).execute();
+        } catch (InterruptedIOException ex) {
+            throw new IOException("请求超时(" + normalizedTimeoutMs + "ms)", ex);
         }
     }
 

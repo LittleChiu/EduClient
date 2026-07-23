@@ -1,23 +1,22 @@
 package me.yeoc.educlient.gui;
 
-import com.alibaba.fastjson.JSONObject;
+import javafx.embed.swing.JFXPanel;
 import lombok.Getter;
 import me.yeoc.educlient.service.EduService;
-import me.yeoc.educlient.util.ConfigManager;
+import me.yeoc.educlient.service.EmbeddedLoginService;
 
 import javax.swing.*;
 import java.awt.*;
 
 public class UserInfoPanel {
     private final MainGUI mainGUI;
+    private final EmbeddedLoginService loginService = new EmbeddedLoginService();
+
     @Getter
     private JPanel mainPanel;
-
-    // Auth Fields
-    private JTextField sessionIdField;
-    private JTextField routeField;
-    private JCheckBox rememberMeBox;
-    private JButton authButton;
+    private JLabel statusLabel;
+    private JLabel locationLabel;
+    private JButton restartButton;
 
     public UserInfoPanel(MainGUI mainGUI) {
         this.mainGUI = mainGUI;
@@ -25,96 +24,75 @@ public class UserInfoPanel {
     }
 
     private void initUI() {
-        mainPanel = new JPanel(new GridBagLayout());
-        GridBagConstraints gbc = new GridBagConstraints();
-        gbc.insets = new Insets(5, 5, 5, 5);
-        gbc.fill = GridBagConstraints.HORIZONTAL;
+        mainPanel = new JPanel(new BorderLayout(8, 8));
+        mainPanel.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
 
-        // Title
-        gbc.gridx = 0;
-        gbc.gridy = 0;
-        gbc.gridwidth = 2;
-        JLabel titleLabel = new JLabel("登录验证 (Cookie Login)");
-        titleLabel.setFont(new Font("Microsoft YaHei", Font.BOLD, 16));
-        titleLabel.setHorizontalAlignment(SwingConstants.CENTER);
-        mainPanel.add(titleLabel, gbc);
+        JPanel header = new JPanel(new BorderLayout(8, 4));
+        JPanel textPanel = new JPanel();
+        textPanel.setLayout(new BoxLayout(textPanel, BoxLayout.Y_AXIS));
+        statusLabel = new JLabel("请在下方完成统一身份认证登录");
+        statusLabel.setFont(statusLabel.getFont().deriveFont(Font.BOLD, 15f));
+        locationLabel = new JLabel(EmbeddedLoginService.LOGIN_URL);
+        locationLabel.setForeground(Color.GRAY);
+        textPanel.add(statusLabel);
+        textPanel.add(locationLabel);
+        header.add(textPanel, BorderLayout.CENTER);
 
-        // Session ID
-        gbc.gridwidth = 1;
-        gbc.gridx = 0;
-        gbc.gridy = 1;
-        mainPanel.add(new JLabel("JSESSIONID:"), gbc);
+        restartButton = new JButton("重新登录");
+        restartButton.addActionListener(event -> {
+            mainGUI.setEduService(null);
+            statusLabel.setText("请在下方完成统一身份认证登录");
+            loginService.reloadLogin();
+        });
+        header.add(restartButton, BorderLayout.EAST);
+        mainPanel.add(header, BorderLayout.NORTH);
 
-        gbc.gridx = 1;
-        gbc.gridy = 1;
-        sessionIdField = new JTextField(30);
-        mainPanel.add(sessionIdField, gbc);
+        JFXPanel browserPanel = new JFXPanel();
+        browserPanel.setPreferredSize(new Dimension(1000, 580));
+        browserPanel.setBorder(BorderFactory.createLineBorder(new Color(210, 210, 210)));
+        mainPanel.add(browserPanel, BorderLayout.CENTER);
 
-        // Route
-        gbc.gridx = 0;
-        gbc.gridy = 2;
-        mainPanel.add(new JLabel("route:"), gbc);
-
-        gbc.gridx = 1;
-        gbc.gridy = 2;
-        routeField = new JTextField(30);
-        mainPanel.add(routeField, gbc);
-
-        // Remember Me
-        gbc.gridx = 1;
-        gbc.gridy = 3;
-        rememberMeBox = new JCheckBox("记住我 (Remember Me)");
-        mainPanel.add(rememberMeBox, gbc);
-
-        // Login Button
-        gbc.gridx = 0;
-        gbc.gridy = 4;
-        gbc.gridwidth = 2;
-        authButton = new JButton("校验 / 登录");
-        mainPanel.add(authButton, gbc);
-
-        // Spacer to push everything up
-        gbc.gridy = 5;
-        gbc.weighty = 1.0;
-        mainPanel.add(new JPanel(), gbc);
-
-        // Logic
-        authButton.addActionListener(e -> doLogin());
-
-        loadConfig();
+        loginService.initialize(browserPanel,
+                location -> SwingUtilities.invokeLater(() -> locationLabel.setText(shorten(location))),
+                cookie -> SwingUtilities.invokeLater(() -> finishLogin(cookie)),
+                error -> SwingUtilities.invokeLater(() -> showError(error)));
     }
 
-    private void loadConfig() {
-        JSONObject config = ConfigManager.loadConfig();
-        if (config != null && config.getBooleanValue("remember")) {
-            sessionIdField.setText(config.getString("sessionId"));
-            routeField.setText(config.getString("route"));
-            rememberMeBox.setSelected(true);
-//            mainGUI.info("已自动填充保存的 Cookie 信息。");
-        }
+    private void finishLogin(String cookie) {
+        statusLabel.setText("正在校验教务系统会话...");
+        restartButton.setEnabled(false);
+        new Thread(() -> {
+            EduService service = new EduService();
+            service.setCookie(cookie);
+            try {
+                if (!service.validateSession()) {
+                    throw new IllegalStateException("教务系统未确认登录成功，请重新登录。");
+                }
+                SwingUtilities.invokeLater(() -> {
+                    mainGUI.setEduService(service);
+                    statusLabel.setText("登录成功，Cookie 已自动获取");
+                    statusLabel.setForeground(new Color(25, 125, 55));
+                    restartButton.setEnabled(true);
+                    mainGUI.info("统一身份认证登录成功，会话 Cookie 已自动设置。");
+                    JOptionPane.showMessageDialog(mainPanel, "登录成功，可以查询成绩和使用其他功能。",
+                            "登录成功", JOptionPane.INFORMATION_MESSAGE);
+                });
+            } catch (Exception error) {
+                SwingUtilities.invokeLater(() -> {
+                    restartButton.setEnabled(true);
+                    showError("会话校验失败：" + error.getMessage());
+                });
+            }
+        }, "session-validator").start();
     }
 
-    private void doLogin() {
-        String sessionId = sessionIdField.getText().trim();
-        String route = routeField.getText().trim();
+    private void showError(String message) {
+        statusLabel.setText(message);
+        statusLabel.setForeground(new Color(180, 45, 45));
+        mainGUI.info(message);
+    }
 
-        if (sessionId.isEmpty() || route.isEmpty()) {
-            JOptionPane.showMessageDialog(mainPanel, "请把 Cookie 填完！");
-            return;
-        }
-
-        EduService eduService = new EduService();
-        try {
-            eduService.setCookie("JSESSIONID=" + sessionId + "; route=" + route);
-            mainGUI.setEduService(eduService);
-
-            ConfigManager.saveConfig(sessionId, route, rememberMeBox.isSelected());
-
-            mainGUI.info(
-                    "设置 Cookie 成功! (JSESSIONID=..." + sessionId.substring(Math.max(0, sessionId.length() - 6)) + ")");
-            JOptionPane.showMessageDialog(mainPanel, "登录信息已设置。");
-        } catch (Exception ex) {
-            mainGUI.info("设置失败: " + ex.getMessage());
-        }
+    private String shorten(String location) {
+        return location.length() <= 120 ? location : location.substring(0, 117) + "...";
     }
 }

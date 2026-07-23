@@ -11,6 +11,8 @@ import java.io.InputStream;
 import java.util.Properties;
 
 public class MainGUI {
+    private static final String TITLE_SUFFIX = "｜资料分享群659502480";
+
     @Getter
     private JPanel mainPanel;
     @Getter
@@ -27,14 +29,14 @@ public class MainGUI {
             e.printStackTrace();
         }
 
-        String title = "教务管理系统 学生客户端 (Dev Mode)";
+        String title = "教务管理系统 学生客户端 (Dev Mode)" + TITLE_SUFFIX;
         try (InputStream is = MainGUI.class.getClassLoader().getResourceAsStream("git.properties")) {
             if (is != null) {
                 Properties props = new Properties();
                 props.load(is);
                 String ver = props.getProperty("git.commit.id.abbrev", "unknown");
                 String time = props.getProperty("git.build.time", "unknown");
-                title = String.format("教务管理系统 学生客户端 (v%s built at %s)", ver, time);
+                title = String.format("教务管理系统 学生客户端 (v%s built at %s)%s", ver, time, TITLE_SUFFIX);
             }
         } catch (Exception ignored) {
         }
