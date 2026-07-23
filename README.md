@@ -6,7 +6,7 @@ Java 旧版保存在 [`legacy-java`](https://github.com/LittleChiu/EduClient/tre
 
 ## 功能
 
-- 内置 WebView2 统一认证登录，进入教务系统后自动提取并校验 Cookie。
+- 内置 WebView2 统一认证登录，支持教务系统直连与 `jwglxt-443.webvpn.zstu.edu.cn` WebVPN 线路；进入教务系统后自动提取并校验对应域名的 Cookie。
 - 成绩查询、统计与 CSV 导出。
 - 课程分类与教学班查询。
 - 批量抢课、并发请求、单次请求超时和候选轮询时长。

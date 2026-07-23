@@ -122,27 +122,36 @@ func (d *DesktopApp) sessionPage() fyne.CanvasObject {
 	cookie.SetPlaceHolder("登录成功后自动获取")
 	state := widget.NewLabel("未设置会话")
 	state.Wrapping = fyne.TextWrapWord
+	endpointByName := map[string]login.Endpoint{
+		login.DirectEndpoint.Name: login.DirectEndpoint,
+		login.WebVPNEndpoint.Name: login.WebVPNEndpoint,
+	}
+	endpointSelect := widget.NewSelect([]string{login.DirectEndpoint.Name, login.WebVPNEndpoint.Name}, nil)
+	endpointSelect.SetSelected(login.DirectEndpoint.Name)
 
 	var openLogin *widget.Button
 	openLogin = widget.NewButtonWithIcon("内置登录", theme.LoginIcon(), func() {
+		endpoint := endpointByName[endpointSelect.Selected]
 		openLogin.Disable()
-		state.SetText("正在打开内置学校登录窗口…")
+		endpointSelect.Disable()
+		state.SetText("正在打开" + endpoint.Name + "登录窗口…")
 		d.setStatus("等待完成统一认证")
 		go func() {
-			value, err := login.Open(context.Background())
+			value, err := login.Open(context.Background(), endpoint)
 			if err == nil {
-				d.client.SetCookie(value)
+				d.client.SetSession(endpoint.BaseURL, value)
 				err = d.client.ValidateSession(context.Background())
 			}
 			fyne.Do(func() {
 				openLogin.Enable()
+				endpointSelect.Enable()
 				if err != nil {
 					state.SetText("登录未完成：" + err.Error())
 					d.setStatus("未登录")
 					return
 				}
 				cookie.SetText(value)
-				state.SetText("登录成功，已自动获取并校验 jwglxt 会话 Cookie。")
+				state.SetText("登录成功，已自动获取并校验 " + endpoint.BaseURL + " 会话 Cookie。")
 				d.setStatus("已登录")
 			})
 		}()
@@ -167,12 +176,12 @@ func (d *DesktopApp) sessionPage() fyne.CanvasObject {
 			})
 		}()
 	})
-	copyHint := widget.NewRichTextFromMarkdown("**内置登录流程**：点击“内置登录”，在 EduClient 的认证窗口中完成学校统一认证。页面进入教务系统首页后，程序自动读取并校验 `jwglxt.zstu.edu.cn` 会话 Cookie；无需复制 Cookie。")
+	copyHint := widget.NewRichTextFromMarkdown("**内置登录流程**：选择 `教务系统直连` 或 `学校 WebVPN` 后点击“内置登录”。页面进入教务系统首页后，程序会从对应域名读取 Cookie，并让成绩查询、选课查询和批量抢课使用同一域名。")
 	copyHint.Wrapping = fyne.TextWrapWord
 	return container.NewPadded(container.NewVBox(
 		widget.NewLabelWithStyle("登录与会话", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
 		copyHint,
-		container.NewHBox(openLogin, validate),
+		container.NewHBox(widget.NewLabel("登录线路"), endpointSelect, openLogin, validate),
 		widget.NewSeparator(),
 		widget.NewLabel("会话 Cookie（已隐藏）"), cookie, state,
 	))

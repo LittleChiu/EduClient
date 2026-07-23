@@ -15,16 +15,35 @@ import (
 	webview "github.com/GopeedLab/webview_go"
 )
 
-const (
-	loginURL   = "https://jwglxt.zstu.edu.cn/sso/jasiglogin"
-	successURL = "/jwglxt/xtgl/"
-	cookieURL  = "https://jwglxt.zstu.edu.cn/jwglxt/xtgl/index_initMenu.html?jsdm=xs"
+const successURL = "/jwglxt/xtgl/"
+
+// Endpoint describes one supported route into the teaching-affairs system.
+type Endpoint struct {
+	Name      string
+	BaseURL   string
+	LoginURL  string
+	CookieURL string
+}
+
+var (
+	DirectEndpoint = Endpoint{
+		Name:      "教务系统直连",
+		BaseURL:   "https://jwglxt.zstu.edu.cn",
+		LoginURL:  "https://jwglxt.zstu.edu.cn/sso/jasiglogin",
+		CookieURL: "https://jwglxt.zstu.edu.cn/jwglxt/xtgl/index_initMenu.html?jsdm=xs",
+	}
+	WebVPNEndpoint = Endpoint{
+		Name:      "学校 WebVPN",
+		BaseURL:   "https://jwglxt-443.webvpn.zstu.edu.cn",
+		LoginURL:  "https://jwglxt-443.webvpn.zstu.edu.cn/jwglxt/xtgl/index_initMenu.html?jsdm=xs",
+		CookieURL: "https://jwglxt-443.webvpn.zstu.edu.cn/jwglxt/xtgl/index_initMenu.html?jsdm=xs",
+	}
 )
 
 // Open displays the embedded login window. It closes itself immediately after
 // the teaching-affairs landing page is reached and returns every jwglxt cookie,
 // including HTTP-only session cookies supplied by WebView2.
-func Open(ctx context.Context) (string, error) {
+func Open(ctx context.Context, endpoint Endpoint) (string, error) {
 	result := make(chan string, 1)
 	finished := make(chan struct{})
 	var closeOnce sync.Once
@@ -67,7 +86,7 @@ func Open(ctx context.Context) (string, error) {
 			})
 		}
 		finish := func(_ string, browserCookie string) error {
-			cookies, err := w.GetCookies(cookieURL)
+			cookies, err := w.GetCookies(endpoint.CookieURL)
 			parts := cookieParts(cookies)
 			// The native cookie manager supplies HTTP-only cookies. document.cookie
 			// provides a fallback for runtimes which expose only non-HTTP-only values.
@@ -87,7 +106,7 @@ func Open(ctx context.Context) (string, error) {
 		// depend on page-side JavaScript and closes the login window as soon as
 		// the SSO redirect has created the teaching-affairs JSESSIONID cookie.
 		captureFromCookieStore := func() {
-			cookies, err := w.GetCookies(cookieURL)
+			cookies, err := w.GetCookies(endpoint.CookieURL)
 			if err != nil {
 				return
 			}
@@ -117,7 +136,7 @@ func Open(ctx context.Context) (string, error) {
   setInterval(watch, 350);
   window.addEventListener('load', watch);
 })();`)
-		w.Navigate(loginURL)
+		w.Navigate(endpoint.LoginURL)
 		go func() {
 			ticker := time.NewTicker(400 * time.Millisecond)
 			defer ticker.Stop()

@@ -18,8 +18,8 @@ import (
 )
 
 const (
-	baseURL   = "https://jwglxt.zstu.edu.cn"
-	userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36 Edge/138.0.0.0"
+	defaultBaseURL = "https://jwglxt.zstu.edu.cn"
+	userAgent      = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36 Edge/138.0.0.0"
 )
 
 var courseTabPattern = regexp.MustCompile(`(?s)queryCourse\(this,'(\d+?)','(.*?)','(\d+?)','(\d+?)'\).*?>(.*?)<`)
@@ -29,6 +29,7 @@ var attrPattern = regexp.MustCompile(`(?is)([\w-]+)\s*=\s*["']([^"']*)["']`)
 // Client owns the authenticated session and all requests to jwglxt.
 type Client struct {
 	mu       sync.RWMutex
+	baseURL  string
 	cookie   string
 	http     *http.Client
 	userInfo model.UserInfo
@@ -49,15 +50,32 @@ func (body *cancelOnClose) Close() error {
 	return err
 }
 
-func NewClient() *Client { return &Client{http: &http.Client{Timeout: 15 * time.Second}} }
+func NewClient() *Client {
+	return &Client{baseURL: defaultBaseURL, http: &http.Client{Timeout: 15 * time.Second}}
+}
+
+// SetSession atomically switches the server origin and its matching cookies.
+// Cookies issued by the direct and WebVPN hosts must never be mixed.
+func (c *Client) SetSession(baseURL, cookie string) {
+	c.mu.Lock()
+	c.baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if c.baseURL == "" {
+		c.baseURL = defaultBaseURL
+	}
+	c.cookie = strings.TrimSpace(cookie)
+	c.userInfo = model.UserInfo{}
+	c.context = model.CourseContext{}
+	c.mu.Unlock()
+}
 
 func (c *Client) SetCookie(cookie string) {
 	c.mu.Lock()
 	c.cookie = strings.TrimSpace(cookie)
 	c.mu.Unlock()
 }
-func (c *Client) Cookie() string { c.mu.RLock(); defer c.mu.RUnlock(); return c.cookie }
-func (c *Client) LoggedIn() bool { return c.Cookie() != "" }
+func (c *Client) Cookie() string  { c.mu.RLock(); defer c.mu.RUnlock(); return c.cookie }
+func (c *Client) BaseURL() string { c.mu.RLock(); defer c.mu.RUnlock(); return c.baseURL }
+func (c *Client) LoggedIn() bool  { return c.Cookie() != "" }
 
 func (c *Client) ValidateSession(ctx context.Context) error {
 	response, err := c.do(ctx, http.MethodGet, "/jwglxt/xtgl/index_initMenu.html?jsdm=xs", nil, 8*time.Second)
@@ -84,7 +102,7 @@ func (c *Client) FetchGrades(ctx context.Context, year, semester string) ([]mode
 		"queryModel.showCount": {"5000"}, "queryModel.currentPage": {"1"}, "queryModel.sortName": {"xnm,xqm,kch"}, "queryModel.sortOrder": {"desc"}, "time": {"1"},
 	}
 	response, err := c.doWithHeaders(ctx, http.MethodPost, "/jwglxt/cjcx/cjcx_cxDgXscj.html?doType=query&gnmkdm=N305005", form, 12*time.Second, http.Header{
-		"Referer": {baseURL + "/jwglxt/cjcx/cjcx_cxDgXscj.html?gnmkdm=N305005&layout=default"},
+		"Referer": {c.BaseURL() + "/jwglxt/cjcx/cjcx_cxDgXscj.html?gnmkdm=N305005&layout=default"},
 	})
 	if err != nil {
 		return nil, err
@@ -414,7 +432,7 @@ func (c *Client) doWithHeaders(ctx context.Context, method, path string, form ur
 	if form != nil {
 		body = strings.NewReader(form.Encode())
 	}
-	req, err := http.NewRequestWithContext(requestCtx, method, baseURL+path, body)
+	req, err := http.NewRequestWithContext(requestCtx, method, c.BaseURL()+path, body)
 	if err != nil {
 		cancel()
 		return nil, err
